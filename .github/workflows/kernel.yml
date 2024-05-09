@@ -30,6 +30,8 @@ jobs:
 
     - name: Start Building Kernel
       run: |
+        chmod +x "${GITHUB_WORKSPACE}/../build_kernel.sh"
+        ${GITHUB_WORKSPACE}/../build_kernel.sh
         ./build_kernel.sh
 
     - name: Set Properties
