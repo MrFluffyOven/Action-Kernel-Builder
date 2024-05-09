@@ -30,7 +30,7 @@ jobs:
 
     - name: Start Building Kernel
       run: |
-        ./build
+        ./build_kernel.sh
 
     - name: Set Properties
       id: props
