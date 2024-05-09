@@ -3,55 +3,69 @@
 set -e -x
 
 # Kernel Source
-KERNEL_SOURCE="https://github.com/nashc-dev/android_kernel_realme_mt6785"
-KERNEL_BRANCH="lineage-20"
-KERNEL_DEFCONFIG="lineage-nashc_defconfig"
+KERNEL_SOURCE="https://github.com/MrFluffyOven/android_kernel_samsung_t618.git"
+KERNEL_BRANCH="A14"
 
-# Prebuilt Clang Toolchain (AOSP)
-CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12L-release/clang-r416183b1.tar.gz"
+#!/bin/bash
 
-# Prebuilt GCC Utilities (AOSP)
-GCC_x64="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9"
-GCC_x32="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9"
-GCC_BRANCH="android12L-release"
+# Download Prebuilt Clang (AOSP)
+if [ ! -d $(pwd)/toolchain/clang/host/linux-x86/clang-r383902 ]; then
+    echo "Downloading Prebuilt Clang from AOSP..."
+    mkdir -p $(pwd)/toolchain/clang/host/linux-x86/clang-r383902
+    curl -Lsq https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz -o clang.tgz
+    tar -xzf clang.tgz -C $(pwd)/toolchain/clang/host/linux-x86/clang-r383902
+else
+    echo "This $(pwd)/toolchain/clang/host/linux-x86/clang-r383902 already exists."
+fi
 
-# Setup make Command
-make_fun() {
-	make O=out ARCH=arm64 \
-		LLVM=1 \
-		CLANG_TRIPLE=aarch64-linux-gnu- \
-		CROSS_COMPILE=aarch64-linux-androidkernel- \
-		CROSS_COMPILE_ARM32=arm-linux-androidkernel- "$@"
-}
+# Download Prebuilt GCC (AOSP)
+if [ ! -d $(pwd)/toolchain/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ]; then
+    echo "Downloading Prebuilt Clang from AOSP..."
+    git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android11-release $(pwd)/toolchain/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+else
+    echo "This $(pwd)/toolchain/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 already exists."
+fi
 
-# Work Path
-WORK="${HOME}/work"
+# Install Packages (In case your server don't have this pre-installed)
+# Run `sudo apt-get update -y` as well.
+echo "Updating build environment..."
+sudo apt-get update -y
+echo "Update done."
 
-# Kernel Folder Name
-KERNEL="myKernel"
+echo "Installing necessary packages..."
+sudo apt-get install bison flex rsync bison device-tree-compiler bc cpio -y
+echo "Package installation done."
 
-# Kernel Source Path
-KERNEL_SRC="${WORK}/${KERNEL}"
+# Exports
+export CROSS_COMPILE=$(pwd)/toolchain/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
+export ARCH=arm64
+export CLANG_TOOL_PATH=$(pwd)/toolchain/clang/host/linux-x86/clang-r383902/bin/
+export PATH=${CLANG_TOOL_PATH}:${PATH//"${CLANG_TOOL_PATH}:"}
+export LD_LIBRARY_PATH=$(pwd)/toolchain/clang/host/linux-x86/clang-r383902/lib64
+export BSP_BUILD_FAMILY=qogirl6
+export DTC_OVERLAY_TEST_EXT=$(pwd)/tools/mkdtimg/ufdt_apply_overlay
+export DTC_OVERLAY_VTS_EXT=$(pwd)/tools/mkdtimg/ufdt_verify_overlay_host
+export BSP_BUILD_ANDROID_OS=y
 
-# Prepare Directory
-mkdir -p "${WORK}"
-cd "${WORK}" || exit 1
+# Build command
+echo "Compiling..."
+make -C $(pwd) O=$(pwd)/out BSP_BUILD_DT_OVERLAY=y CC=clang LD=ld.lld ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- gta8_eur_open_defconfig
+make -C $(pwd) O=$(pwd)/out BSP_BUILD_DT_OVERLAY=y CC=clang LD=ld.lld ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- -j$(nproc --all)
+echo "Build done."
 
-# Cloning all the Necessary files
-if [ ! -d clang ]; then mkdir clang && curl -Lsq "${CLANG_URL}" -o clang.tgz && tar -xzf clang.tgz -C clang; fi
-[ ! -d x64 ] && git clone --depth=1 "${GCC_x64}" -b "${GCC_BRANCH}" ./x64
-[ ! -d x32 ] && git clone --depth=1 "${GCC_x32}" -b "${GCC_BRANCH}" ./x32
-[ ! -d "${KERNEL}" ] && git clone --depth=1 "${KERNEL_SOURCE}" -b "${KERNEL_BRANCH}" "${KERNEL}"
+# Final Build
+mkdir -p kernelbuild
+echo "Copying Image/.gz into kernelbuild..."
+cp -nf $(pwd)/out/arch/arm64/boot/Image $(pwd)/kernelbuild
+cp -nf $(pwd)/out/arch/arm64/boot/Image.gz $(pwd)/kernelbuild
+echo "Done copying Image/.gz into kernelbuild."
 
-# Setting Toolchain Path
-PATH="${WORK}/clang/bin:${WORK}/x64/bin:${WORK}/x32/bin:/bin"
+mkdir -p modulebuild
+echo "Copying modules into modulebuild..."
+cp -nr $(find out -name '*.ko') $(pwd)/modulebuild
+echo "Done copying modules into modulebuild."
 
-# Enter Kernel root directory
-cd "${KERNEL_SRC}" || exit 1
-
-# KernelSU - Disable if not building one.
-# curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-# Start Compiling Kernel
-make_fun "${KERNEL_DEFCONFIG}"
-make_fun -j"$(nproc --all)" 2>&1 | tee build.log 
+# AnyKernel3 Support
+cp -nf $(pwd)/kernelbuild/Image $(pwd)/AnyKernel3
+cp -nr $(pwd)/modulebuild/*.ko $(pwd)/AnyKernel3/modules/system/lib/modules
+cd AnyKernel3 && zip -r9 UPDATE-AnyKernel3-gta8-.zip * -x .git README.md *placeholder

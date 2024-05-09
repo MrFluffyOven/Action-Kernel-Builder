@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       DEVICE_NAME:
-        description: 'Your device codename.'
+        description: 'gta8.'
         required: true
         default: ''
       ANDROID_VERSION:
-        description: 'Your android version.'
+        description: '14.'
         required: true
         default: ''
         type: choice
@@ -23,15 +23,13 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@main
 
     - name: Start Building Kernel
       run: |
-        export KBUILD_BUILD_USER="${{ github.actor }}"
-        export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
         ./build
 
     - name: Set Properties
